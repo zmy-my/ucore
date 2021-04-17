@@ -115,7 +115,7 @@ default_init_memmap(struct Page *base, size_t n) {
 	
     }
     base->property = n;
-    SetPageProperty(p);
+    SetPageProperty(base);
     nr_free += n;
     list_add_before(&free_list,&(base->page_link));
 }
@@ -165,17 +165,17 @@ default_alloc_pages(size_t n) {
         }
     }
     if(page!=NULL){
-	SetPageReserved(page);
+	//SetPageReserved(page);
 	if(page->property>n){
 	   struct Page*p=page+n;
 	   p->property=page->property-n;
 	   SetPageProperty(p);
 	   list_add(&(page->page_link),&(p->page_link));
 	}
-	struct Page *p=page;
-	ClearPageProperty(page);
+	
 	list_del(&(page->page_link));
 	nr_free-=n;
+	ClearPageProperty(page);
     }
     return page;
 }
@@ -222,15 +222,10 @@ default_free_pages(struct Page *base, size_t n) {
     SetPageProperty(base);
     nr_free += n;
     le=list_next(&free_list);
-    list_entry_t* prev;
-    list_entry_t* np;
-    while(le2page(le,page_link)<base&&le!=&free_list){
+    while((le!=&free_list)&&base>le2page(le,page_link)){	
 	le=list_next(le);
     }
-    np=le;
-    prev=list_prev(le);
-    __list_add(&(base->page_link),prev,np);
-    //list_add(&free_list, &(base->page_link));
+    list_add_before(le, &(base->page_link));
 }
 
 static size_t
