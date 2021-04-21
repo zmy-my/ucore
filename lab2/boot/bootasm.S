@@ -42,7 +42,8 @@ seta20.2:
 
     movb $0xdf, %al                                 # 0xdf -> port 0x60
     outb %al, $0x60                                 # 0xdf = 11011111, means set P2's A20 bit(the 1 bit) to 1
-
+    
+    # 内存探测
 probe_memory:
     movl $0, 0x8000
     xorl %ebx, %ebx
@@ -62,6 +63,7 @@ cont:
     jnz start_probe
 finish_probe:
 
+    # 以下开始从实模式切换到保护模式
     # Switch from real to protected mode, using a bootstrap GDT
     # and segment translation that makes virtual addresses
     # identical to physical addresses, so that the
