@@ -11,15 +11,15 @@
 #include<buddy_system.h>
 
 /* *
- * Task State Segment:
+ * Task State Segment:任务状态段（TSS）TSS在任务切换过程中起着重要作用，通过它实现任务的挂起和恢复。所谓任务切换是指，挂起当前正在执行的任务，恢复或启动另一任务的执行。在任务切换过程中，首先，处理器中各寄存器的当前值被自动保存到TR（任务寄存器）所指定的TSS中；然后，下一任务的TSS的选择子被装入TR；最后，从TR所指定的TSS中取出各寄存器的值送到处理器的各寄存器中。由此可见，通过在TSS中保存任务现场各寄存器状态的完整映象，实现任务的切换。          
  *
  * The TSS may reside anywhere in memory. A special segment register called
- * the Task Register (TR) holds a segment selector that points a valid TSS
- * segment descriptor which resides in the GDT. Therefore, to use a TSS
+ * the Task Register (TR) holds a segment selector 段选择符 that points a valid TSS
+ * segment descriptor 段描述符 which resides in the GDT. Therefore, to use a TSS
  * the following must be done in function gdt_init:
- *   - create a TSS descriptor entry in GDT
- *   - add enough information to the TSS in memory as needed
- *   - load the TR register with a segment selector for that segment
+ *   - create a TSS descriptor entry in GDT 在GDT中创造一个TSS描述符入口
+ *   - add enough information to the TSS in memory as needed 在内存中添加需要的信息到TSS
+ *   - load the TR register with a segment selector for that segment 
  *
  * There are several fileds in TSS for specifying the new stack pointer when a
  * privilege level change happens. But only the fields SS0 and ESP0 are useful
@@ -398,7 +398,7 @@ page_remove_pte(pde_t *pgdir, uintptr_t la, pte_t *ptep) {
      *   PTE_P           0x001                   // page table/directory entry flags bit : Present
      */
 #if 0
-    if (0) {                      //(1) check if this page table entry is present
+    if (0) {                      //(1) check if this page table entry is present检查页表是否存在
         struct Page *page = NULL; //(2) find corresponding page to pte
                                   //(3) decrease page reference
                                   //(4) and free this page when page reference reachs 0
@@ -406,6 +406,14 @@ page_remove_pte(pde_t *pgdir, uintptr_t la, pte_t *ptep) {
                                   //(6) flush tlb
     }
 #endif
+//ex3的代码，待修改，待理解！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！ 
+   if (*ptep & PTE_P) {   //PTE_P代表页存在
+   struct Page *page = pte2page(*ptep);
+   if (page_ref_dec(page) == 0) {//判断是否只使用了一次
+       free_page(page);
+   }
+   *ptep = 0;
+   tlb_invalidate(pgdir, la)
 }
 
 //page_remove - free an Page which is related linear address la and has an validated pte
