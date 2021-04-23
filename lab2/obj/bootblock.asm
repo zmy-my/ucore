@@ -59,7 +59,8 @@ seta20.2:
     7c1c:	e6 60                	out    %al,$0x60
 
 00007c1e <probe_memory>:
-
+    
+    # 内存探测
 probe_memory:
     movl $0, 0x8000
     7c1e:	66 c7 06 00 80       	movw   $0x8000,(%esi)
@@ -104,7 +105,7 @@ cont:
     7c57:	75 d4                	jne    7c2d <start_probe>
 
 00007c59 <finish_probe>:
-
+    # 以下开始从实模式切换到保护模式
     # Switch from real to protected mode, using a bootstrap GDT
     # and segment translation that makes virtual addresses
     # identical to physical addresses, so that the

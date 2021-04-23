@@ -406,14 +406,15 @@ page_remove_pte(pde_t *pgdir, uintptr_t la, pte_t *ptep) {
                                   //(6) flush tlb
     }
 #endif
-//ex3的代码，待修改，待理解！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！ 
-   if (*ptep & PTE_P) {   //PTE_P代表页存在
-   struct Page *page = pte2page(*ptep);
-   if (page_ref_dec(page) == 0) {//判断是否只使用了一次
-       free_page(page);
-   }
-   *ptep = 0;
-   tlb_invalidate(pgdir, la)
+//ex3的代码 
+    if (*ptep & PTE_P) {   //PTE_P代表页存在
+        struct Page *page = pte2page(*ptep); //这个函数用于获取物理地址
+        if (page_ref_dec(page) == 0) { //page_ref_dec(page)将ref减1，判断是否只使用了一次（只被二级页表引用一次）
+            free_page(page); //则可以释放这个页
+        }
+        *ptep = 0;//如果还有更多的页表应用了它，不能释放，取消二级映射
+        tlb_invalidate(pgdir, la);
+    }
 }
 
 //page_remove - free an Page which is related linear address la and has an validated pte
