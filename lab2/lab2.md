@@ -130,7 +130,7 @@ page_remove_pte(pde_t *pgdir, uintptr_t la, pte_t *ptep) {
      * Maybe you want help comment, BELOW comments can help you finish the code
      *
      * Some Useful MACROs and DEFINEs, you can use them in below implementation.
-     * MACROs or Functions:
+     * MACROs or Functions:一些有用的函数
      *   struct Page *page pte2page(*ptep): get the according page from the value of a ptep
      *   free_page : free a page
      *   page_ref_dec(page) : decrease page->ref. NOTICE: ff page->ref == 0 , then this page should be free.
@@ -148,5 +148,24 @@ page_remove_pte(pde_t *pgdir, uintptr_t la, pte_t *ptep) {
                                   //(6) flush tlb
     }
 #endif
+    if (*ptep & PTE_P) {   //PTE_P代表页存在
+        struct Page *page = pte2page(*ptep); //这个函数用于获取二级页表对应的物理页
+        if (page_ref_dec(page) == 0) { //page_ref_dec(page)将ref减1，判断是否只使用了一次（只被二级页表引用一次）
+            free_page(page); //则可以释放这个页
+        }
+        *ptep = 0;//如果还有更多的页表应用了它，不能释放，要取消二级映射，把二级页表ixang清零
+        tlb_invalidate(pgdir, la);//更新TLB，使TLB中的项无效（除非这个页表正在被使用）
+    }
 }
 ```
+pde_t:线性地址前十位（一级页目录项）
+
+pte_t:中间十位（二级页表项）
+
+la:线性地址
+
+pte2page()获取二级页表对应的物理页
+
+PDX()获取页目录项
+
+PTX()获取页表项
