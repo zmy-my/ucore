@@ -112,41 +112,85 @@ default_init_memmap(struct Page *base, size_t n) {
         assert(PageReserved(p));
         p->flags = p->property = 0;
         set_page_ref(p, 0);
+	
     }
     base->property = n;
     SetPageProperty(base);
     nr_free += n;
-    list_add(&free_list, &(base->page_link));
+    list_add_before(&free_list,&(base->page_link));
 }
-
+/*(4) `default_alloc_pages`:
+ *  Search for the first free block (block size >= n) in the free list and reszie
+ * the block found, returning the address of this block as the address required by
+ * `malloc`.
+ *  (4.1)
+ *      So you should search the free list like this:
+ *          list_entry_t le = &free_list;
+ *          while((le=list_next(le)) != &free_list) {
+ *          ...
+ *      (4.1.1)
+ *          In the while loop, get the struct `page` and check if `p->property`
+ *      (recording the num of free pages in this block) >= n.
+ *              struct Page *p = le2page(le, page_link);
+ *              if(p->property >= n){ ...
+ *      (4.1.2)
+ *          If we find this `p`, it means we've found a free block with its size
+ *      >= n, whose first `n` pages can be malloced. Some flag bits of this page
+ *      should be set as the following: `PG_reserved = 1`, `PG_property = 0`.
+ *      Then, unlink the pages from `free_list`.
+ *          (4.1.2.1)
+ *              If `p->property > n`, we should re-calculate number of the rest
+ *          pages of this free block. (e.g.: `le2page(le,page_link))->property
+ *          = p->property - n;`)
+ *          (4.1.3)
+ *              Re-caluclate `nr_free` (number of the the rest of all free block).
+ *          (4.1.4)
+ *              return `p`.
+ *      (4.2)
+ *          If we can not find a free block with its size >=n, then return NULL.
+*/
 static struct Page *
 default_alloc_pages(size_t n) {
     assert(n > 0);
     if (n > nr_free) {
         return NULL;
     }
-    struct Page *page = NULL;
+    struct Page *page=NULL;
     list_entry_t *le = &free_list;
     while ((le = list_next(le)) != &free_list) {
         struct Page *p = le2page(le, page_link);
         if (p->property >= n) {
-            page = p;
-            break;
+	   page=p;
+	   break;
         }
     }
-    if (page != NULL) {
-        list_del(&(page->page_link));
-        if (page->property > n) {
-            struct Page *p = page + n;
-            p->property = page->property - n;
-            list_add(&free_list, &(p->page_link));
-    }
-        nr_free -= n;
-        ClearPageProperty(page);
+    if(page!=NULL){
+	if(page->property>n){
+	   struct Page*p=page+n;
+	   p->property=page->property-n;
+	   SetPageProperty(p);
+	   list_add(&(page->page_link),&(p->page_link));
+	}
+	
+	list_del(&(page->page_link));
+	nr_free-=n;
+	ClearPageProperty(page);
     }
     return page;
 }
-
+/* (5) `default_free_pages`:
+ *  re-link the pages into the free list, and may merge small free blocks into
+ * the big ones.
+ *  (5.1)
+ *      According to the base address of the withdrawed blocks, search the free
+ *  list for its correct position (with address from low to high), and insert
+ *  the pages. (May use `list_next`, `le2page`, `list_add_before`)
+ *  (5.2)
+ *      Reset the fields of the pages, such as `p->ref` and `p->flags` (PageProperty)
+ *  (5.3)
+ *      Try to merge blocks at lower or higher addresses. Notice: This should
+ *  change some pages' `p->property` correctly.
+ */
 static void
 default_free_pages(struct Page *base, size_t n) {
     assert(n > 0);
@@ -174,8 +218,13 @@ default_free_pages(struct Page *base, size_t n) {
             list_del(&(p->page_link));
         }
     }
+    SetPageProperty(base);
     nr_free += n;
-    list_add(&free_list, &(base->page_link));
+    le=list_next(&free_list);
+    while((le!=&free_list)&&base>le2page(le,page_link)){	
+	le=list_next(le);
+    }
+    list_add_before(le, &(base->page_link));
 }
 
 static size_t
@@ -292,6 +341,7 @@ default_check(void) {
 
     le = &free_list;
     while ((le = list_next(le)) != &free_list) {
+        assert(le->next->prev == le && le->prev->next == le);
         struct Page *p = le2page(le, page_link);
         count --, total -= p->property;
     }

@@ -62,6 +62,7 @@ cont:
     jnz start_probe
 finish_probe:
 
+    # 以下开始从实模式切换到保护模式
     # Switch from real to protected mode, using a bootstrap GDT
     # and segment translation that makes virtual addresses
     # identical to physical addresses, so that the

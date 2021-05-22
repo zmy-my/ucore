@@ -12,15 +12,15 @@
 #include <vmm.h>
 
 /* *
- * Task State Segment:
+ * Task State Segment:任务状态段（TSS）TSS在任务切换过程中起着重要作用，通过它实现任务的挂起和恢复。所谓任务切换是指，挂起当前正在执行的任务，恢复或启动另一任务的执行。在任务切换过程中，首先，处理器中各寄存器的当前值被自动保存到TR（任务寄存器）所指定的TSS中；然后，下一任务的TSS的选择子被装入TR；最后，从TR所指定的TSS中取出各寄存器的值送到处理器的各寄存器中。由此可见，通过在TSS中保存任务现场各寄存器状态的完整映象，实现任务的切换。          
  *
  * The TSS may reside anywhere in memory. A special segment register called
- * the Task Register (TR) holds a segment selector that points a valid TSS
- * segment descriptor which resides in the GDT. Therefore, to use a TSS
+ * the Task Register (TR) holds a segment selector 段选择符 that points a valid TSS
+ * segment descriptor 段描述符 which resides in the GDT. Therefore, to use a TSS
  * the following must be done in function gdt_init:
- *   - create a TSS descriptor entry in GDT
- *   - add enough information to the TSS in memory as needed
- *   - load the TR register with a segment selector for that segment
+ *   - create a TSS descriptor entry in GDT 在GDT中创造一个TSS描述符入口
+ *   - add enough information to the TSS in memory as needed 在内存中添加需要的信息到TSS
+ *   - load the TR register with a segment selector for that segment 
  *
  * There are several fileds in TSS for specifying the new stack pointer when a
  * privilege level change happens. But only the fields SS0 and ESP0 are useful
@@ -140,6 +140,7 @@ gdt_init(void) {
 static void
 init_pmm_manager(void) {
     pmm_manager = &default_pmm_manager;
+    //pmm_manager = &buddy_system;
     cprintf("memory management: %s\n", pmm_manager->name);
     pmm_manager->init();
 }
@@ -155,22 +156,11 @@ struct Page *
 alloc_pages(size_t n) {
     struct Page *page=NULL;
     bool intr_flag;
-    
-    while (1)
+    local_intr_save(intr_flag);
     {
-         local_intr_save(intr_flag);
-         {
-              page = pmm_manager->alloc_pages(n);
-         }
-         local_intr_restore(intr_flag);
-
-         if (page != NULL || n > 1 || swap_init_ok == 0) break;
-         
-         extern struct mm_struct *check_mm_struct;
-         //cprintf("page %x, call swap_out in alloc_pages %d\n",page, n);
-         swap_out(check_mm_struct, n, 0);
+        page = pmm_manager->alloc_pages(n);
     }
-    //cprintf("n %d,get page %x, No %d in alloc_pages\n",n,page,(page-pages));
+    local_intr_restore(intr_flag);
     return page;
 }
 
@@ -372,6 +362,20 @@ get_pte(pde_t *pgdir, uintptr_t la, bool create) {
     }
     return NULL;          // (8) return page table entry
 #endif
+    pde_t *pdep = &pgdir[PDX(la)];                      // (1) find page directory entry
+    if (!(*pdep & PTE_P)){                              // (2) check if entry is not present 
+        struct Page *page;
+        if (create){                                    // (3) check if creating is needed, then alloc page for page table
+            if((page = alloc_page())==NULL)
+                return NULL;
+        }else
+            return NULL;
+        set_page_ref(page, 1);                          // (4) set page reference
+        uintptr_t addr = page2pa(page);                 // (5) get linear address of page
+        memset(KADDR(addr), 0, PGSIZE);                  // (6) clear page content using memset
+        *pdep = addr | PTE_U | PTE_W | PTE_P;             // (7) set page directory entry's permission
+    }
+    return &((pte_t *)KADDR(PDE_ADDR(*pdep)))[PTX(la)];// (8) return page table entry
 }
 
 //get_page - get related Page struct for linear address la using PDT pgdir
@@ -409,7 +413,7 @@ page_remove_pte(pde_t *pgdir, uintptr_t la, pte_t *ptep) {
      *   PTE_P           0x001                   // page table/directory entry flags bit : Present
      */
 #if 0
-    if (0) {                      //(1) check if this page table entry is present
+    if (0) {                      //(1) check if this page table entry is present检查页表是否存在
         struct Page *page = NULL; //(2) find corresponding page to pte
                                   //(3) decrease page reference
                                   //(4) and free this page when page reference reachs 0
@@ -417,6 +421,15 @@ page_remove_pte(pde_t *pgdir, uintptr_t la, pte_t *ptep) {
                                   //(6) flush tlb
     }
 #endif
+//ex3的代码 
+    if (*ptep & PTE_P) {   //PTE_P代表页存在
+        struct Page *page = pte2page(*ptep); //这个函数用于获取物理地址
+        if (page_ref_dec(page) == 0) { //page_ref_dec(page)将ref减1，判断是否只使用了一次（只被二级页表引用一次）
+            free_page(page); //则可以释放这个页
+        }
+        *ptep = 0;//如果还有更多的页表应用了它，不能释放，取消二级映射
+        tlb_invalidate(pgdir, la);
+    }
 }
 
 //page_remove - free an Page which is related linear address la and has an validated pte
