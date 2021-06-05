@@ -375,6 +375,20 @@ get_pte(pde_t *pgdir, uintptr_t la, bool create) {
     }
     return NULL;          // (8) return page table entry
 #endif
+    pde_t *pdep = &pgdir[PDX(la)];                      // (1) find page directory entry
+    if (!(*pdep & PTE_P)){                              // (2) check if entry is not present 
+        struct Page *page;
+        if (create){                                    // (3) check if creating is needed, then alloc page for page table
+            if((page = alloc_page())==NULL)
+                return NULL;
+        }else
+            return NULL;
+        set_page_ref(page, 1);                          // (4) set page reference
+        uintptr_t addr = page2pa(page);                 // (5) get linear address of page
+        memset(KADDR(addr), 0, PGSIZE);                  // (6) clear page content using memset
+        *pdep = addr | PTE_U | PTE_W | PTE_P;             // (7) set page directory entry's permission
+    }
+    return &((pte_t *)KADDR(PDE_ADDR(*pdep)))[PTX(la)];// (8) return page table entry
 }
 
 //get_page - get related Page struct for linear address la using PDT pgdir
@@ -420,6 +434,15 @@ page_remove_pte(pde_t *pgdir, uintptr_t la, pte_t *ptep) {
                                   //(6) flush tlb
     }
 #endif
+//ex3的代码 
+    if (*ptep & PTE_P) {   //PTE_P代表页存在
+        struct Page *page = pte2page(*ptep); //这个函数用于获取物理地址
+        if (page_ref_dec(page) == 0) { //page_ref_dec(page)将ref减1，判断是否只使用了一次（只被二级页表引用一次）
+            free_page(page); //则可以释放这个页
+        }
+        *ptep = 0;//如果还有更多的页表应用了它，不能释放，取消二级映射
+        tlb_invalidate(pgdir, la);
+    }
 }
 
 //page_remove - free an Page which is related linear address la and has an validated pte
