@@ -102,6 +102,18 @@ alloc_proc(void) {
      *       uint32_t flags;                             // Process flag
      *       char name[PROC_NAME_LEN + 1];               // Process name
      */
+        proc->state = PROC_UNINIT; //进程为初始化状态
+        proc->pid = -1;            //进程PID为-1
+        proc->runs = 0;            //初始化时间片
+        proc->kstack = 0;          //内核栈地址
+        proc->need_resched = 0;    //不需要调度
+        proc->parent = NULL;       //父进程为空
+        proc->mm = NULL;           //虚拟内存为空
+        memset(&(proc->context), 0, sizeof(struct context));          //初始化上下文
+        proc->tf = NULL;           //中断帧指针为空
+        proc->cr3 = boot_cr3;      //页目录为内核页目录表的基址
+        proc->flags = 0;           //标志位为0
+        memset(proc->name, 0, PROC_NAME_LEN);//进程名为0
     }
     return proc;
 }
@@ -296,6 +308,28 @@ do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
     //    5. insert proc_struct into hash_list && proc_list
     //    6. call wakeup_proc to make the new child process RUNNABLE
     //    7. set ret vaule using child proc's pid
+    if ((proc = alloc_proc()) == NULL) { //分配内存失败
+        goto fork_out; //返回
+    }
+    proc->parent = current; //设置父进程名字
+    if (setup_kstack(proc) != 0) {//分配内核栈
+        goto bad_fork_cleanup_proc; //返回
+    }
+    if (copy_mm(clone_flags, proc) != 0) { //复制父进程内存信息
+        goto bad_fork_cleanup_kstack; //返回
+    }
+    copy_thread(proc, stack, tf); //复制中断帧和上下文信息
+    bool intr_flag; 
+    local_intr_save(intr_flag);  //屏蔽中断，intr_flag置为1
+    {
+        proc->pid = get_pid(); //获取当前进程PID
+        hash_proc(proc);  //建立hash映射
+        list_add(&proc_list,&(proc->list_link));//加入进程链表
+        nr_process ++;  //进程数加一
+    }
+    local_intr_restore(intr_flag); //恢复中断
+    wakeup_proc(proc); //唤醒新进程
+    ret = proc->pid; //返回当前进程的PID
 fork_out:
     return ret;
 
